@@ -29,6 +29,33 @@ function getYesterdayRange() {
 }
 
 // ==========================
+// 🔹 RETRY CON BACKOFF
+// ==========================
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS  = [2000, 4000, 8000];
+
+async function fetchWithRetry(url, params) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await axios.get(url, { headers, params, timeout: 120000 });
+    } catch (err) {
+      const status = err.response?.status;
+      if (!RETRYABLE_STATUS.has(status) || attempt === RETRY_DELAYS_MS.length) {
+        throw err;
+      }
+      const delay = RETRY_DELAYS_MS[attempt];
+      console.warn(`[openai] Reintento ${attempt + 1}/3 — status ${status} en ${url} (esperando ${delay}ms)`);
+      lastError = err;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
+// ==========================
 // 🔹 PAGINACION
 // ==========================
 async function fetchAllPages(url, params) {
@@ -36,10 +63,7 @@ async function fetchAllPages(url, params) {
   let page = null;
 
   do {
-    const response = await axios.get(url, {
-      headers,
-      params: page ? { ...params, page } : params,
-    });
+    const response = await fetchWithRetry(url, page ? { ...params, page } : params);
 
     results.push(...response.data.data);
     page = response.data.has_more ? response.data.next_page : null;
@@ -63,10 +87,47 @@ function getOperationType(lineItem = "", isEmbedding = false) {
 }
 
 // ==========================
+// 🔹 CARGAR USER MAP
+// ==========================
+async function loadUserMap() {
+  const projects = await fetchAllPages(
+    "https://api.openai.com/v1/organization/projects",
+    { limit: 100 }
+  );
+
+  const userMap = {};
+
+  for (const project of projects) {
+    const serviceAccounts = await fetchAllPages(
+      `https://api.openai.com/v1/organization/projects/${project.id}/service_accounts`,
+      { limit: 100 }
+    );
+
+    serviceAccounts.forEach(account => {
+      userMap[account.id] = account.name;
+    });
+  }
+
+  const orgUsers = await fetchAllPages(
+    "https://api.openai.com/v1/organization/users",
+    { limit: 100 }
+  );
+
+  orgUsers.forEach(user => {
+    userMap[user.id] = user.name || user.email;
+  });
+
+  return userMap;
+}
+
+// ==========================
 // 🔥 COLLECT
 // ==========================
-async function collect() {
-  const { start_time, end_time } = getYesterdayRange();
+async function collect({ start_time, end_time, userMap } = {}) {
+  if (!start_time || !end_time) {
+    ({ start_time, end_time } = getYesterdayRange());
+  }
+
   const date = new Date(start_time * 1000).toISOString().split("T")[0];
 
   console.log("Consultando rango:", start_time, end_time);
@@ -219,34 +280,9 @@ async function collect() {
   ]);
 
   // ==========================
-  // 3️⃣ TRAER TODOS LOS PROYECTOS + USERS
+  // 3️⃣ RESOLVER USUARIOS
   // ==========================
-  const projects = await fetchAllPages(
-    "https://api.openai.com/v1/organization/projects",
-    { limit: 100 }
-  );
-
-  const userMap = {};
-
-  for (const project of projects) {
-    const serviceAccounts = await fetchAllPages(
-      `https://api.openai.com/v1/organization/projects/${project.id}/service_accounts`,
-      { limit: 100 }
-    );
-
-    serviceAccounts.forEach(account => {
-      userMap[account.id] = account.name;
-    });
-  }
-
-  const orgUsers = await fetchAllPages(
-    "https://api.openai.com/v1/organization/users",
-    { limit: 100 }
-  );
-
-  orgUsers.forEach(user => {
-    userMap[user.id] = user.name || user.email;
-  });
+  const resolvedUserMap = userMap ?? await loadUserMap();
 
   // ==========================
   // 4️⃣ FORMATEAR RESULTADO FINAL
@@ -254,7 +290,7 @@ async function collect() {
   const results = Object.values(usageMap).map(item => ({
     date: item.date,
     project_id: item.project_id,
-    user_name: userMap[item.user_id] || "Unknown",
+    user_name: resolvedUserMap[item.user_id] || "Unknown",
     model: item.model,
     operation_type: item.operation_type,
     tier: null,
@@ -274,4 +310,4 @@ async function collect() {
   return results;
 }
 
-module.exports = { collect };
+module.exports = { collect, loadUserMap };

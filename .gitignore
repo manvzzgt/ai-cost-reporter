@@ -31,3 +31,7 @@ CLAUDE.md
 
 # Lambda deploy artifact
 lambda-deploy.zip
+
+# Configuration files
+config/service_mapping.json
+gcp-credentials.json

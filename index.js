@@ -1,7 +1,13 @@
 const { write } = require("./shared/s3Writer");
 
+const COLLECTOR_MAP = {
+  openai:    "openai",
+  vertex_ai: "vertex",
+};
+
 async function runProvider(provider) {
-  const { collect } = require(`./collectors/${provider}`);
+  const collectorFile = COLLECTOR_MAP[provider] ?? provider;
+  const { collect } = require(`./collectors/${collectorFile}`);
   const data = await collect();
 
   if (!data.length) {
