@@ -12,6 +12,7 @@ CREATE EXTERNAL TABLE ai_costs_db.data (
   cached_tokens  bigint,
   unit_type      string,
   requests       bigint,
+  call_minutes   double,
   total_usd      double,
   total_mxn      double,
   fx_rate        double,

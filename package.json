@@ -7,7 +7,9 @@
     "start": "node server.js",
     "test:openai": "node test/test-openai.js",
     "test:vertex": "node test/test-vertex.js",
+    "test:vapi": "node test/test-vapi.js",
     "test:handler": "node test/test-handler.js",
+    "backfill:vapi": "node scripts/backfill-vapi.js",
     "backfill:openai": "node scripts/backfill-openai.js",
     "backfill:vertex": "node scripts/backfill-vertex.js",
     "package": "node scripts/package-lambda.js"
